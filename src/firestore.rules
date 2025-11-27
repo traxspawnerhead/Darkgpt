@@ -1,0 +1,86 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------------
+    // Helper Functions
+    // ------------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      // The most reliable way to check for admin role is to see if a document
+      // exists for the user in a dedicated admin roles collection.
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+
+    function hasValidUserCreateData(userId) {
+      let isCreatingOwnDoc = request.resource.data.id == userId;
+      let hasRequiredFields = 'name' in request.resource.data &&
+                              'email' in request.resource.data &&
+                              'createdAt' in request.resource.data &&
+                              'isPro' in request.resource.data &&
+                              'role' in request.resource.data &&
+                              request.resource.data.role == 'user';
+      return isCreatingOwnDoc && hasRequiredFields;
+    }
+    
+    function hasValidReportCreateData() {
+      return request.resource.data.userId == request.auth.uid;
+    }
+
+    // ------------------------------------------------------------------------
+    // Collection Rules
+    // ------------------------------------------------------------------------
+    
+    match /users/{userId} {
+      // Admins can read/write ANY document.
+      // Non-admin users can only get/update THEIR OWN document.
+      allow get, update: if isAdmin() || isOwner(userId);
+      
+      // Allow user to create their own profile with valid data. Admins can also create users.
+      allow create: if (isOwner(userId) && hasValidUserCreateData(userId)) || isAdmin();
+      
+      // Admins can delete users.
+      allow delete: if isAdmin();
+
+      // Rules for subcollections for non-admins
+      match /{allSubcollections=**} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // This rule is separate because 'list' applies to the collection, not individual documents.
+    // This was the source of the persistent error.
+    match /users/{document=**} {
+        allow list: if isAdmin();
+    }
+
+
+    /**
+     * @description Stores moderation reports submitted by users.
+     * @path /moderation_reports/{reportId}
+     */
+    match /moderation_reports/{reportId} {
+      // Create access for any signed-in user. Admin access is handled by the global rule.
+      allow create: if isSignedIn() && hasValidReportCreateData();
+      allow read, write: if isAdmin();
+    }
+
+    /**
+     * @description Admin roles are managed here. Only admins can see who is an admin.
+     * @path /roles_admin/{userId}
+     */
+    match /roles_admin/{userId} {
+      // This collection is admin-only.
+      allow read, write: if isAdmin();
+    }
+  }
+}
