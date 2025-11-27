@@ -1,0 +1,10 @@
+# This file is created as requested.
+# Note: This project is configured for Firebase App Hosting, so this Netlify configuration file will not be used.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Add environment variables here if needed for Netlify deployment
+  # TAVILY_API_KEY = "your_tavily_api_key_here"
